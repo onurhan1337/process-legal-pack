@@ -1,0 +1,1 @@
+export const PROPERTY_DETAILS_EXTRACTION_PROMPT = `Extract the address, guide price, auction date, catalog number, tenure, description, number of bedrooms, number of bathrooms, size, lot type, EPC rating, council tax, buyers' charge, and administration charge band from the provided property listing.`;
