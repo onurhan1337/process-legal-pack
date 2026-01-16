@@ -1,0 +1,326 @@
+{
+	"info": {
+		"_postman_id": "legal-pack-processor",
+		"name": "Legal Pack Processor",
+		"description": "API collection for Legal Pack Processor service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/health",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"health"
+					]
+				},
+				"description": "Check if the service is running"
+			},
+			"response": []
+		},
+		{
+			"name": "Process Legal Pack",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{supabaseJwtToken}}",
+						"description": "Supabase JWT token"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"userId\": \"user-uuid\",\n  \"url\": \"https://example.com/property-listing\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/process",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"process"
+					]
+				},
+				"description": "Start processing a legal pack. Returns immediately with job ID."
+			},
+			"response": [
+				{
+					"name": "Success",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{supabaseJwtToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"userId\": \"user-uuid\",\n  \"url\": \"https://example.com/property-listing\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/process",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"process"
+							]
+						}
+					},
+					"status": "Accepted",
+					"code": 202,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"jobId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"status\": \"pending\",\n  \"message\": \"Job queued for processing\"\n}"
+				},
+				{
+					"name": "Missing Fields",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{supabaseJwtToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/process",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"process"
+							]
+						}
+					},
+					"status": "Bad Request",
+					"code": 400,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"error\": \"Missing required fields: reportId and userId are required\"\n}"
+				},
+				{
+					"name": "Unauthorized",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"userId\": \"user-uuid\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/process",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"process"
+							]
+						}
+					},
+					"status": "Unauthorized",
+					"code": 401,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"error\": \"Unauthorized\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Process Legal Pack (No URL)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{supabaseJwtToken}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"userId\": \"user-uuid\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/process",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"process"
+					]
+				},
+				"description": "Process legal pack without URL (PDFs only)"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Job Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/jobs/{{jobId}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"jobs",
+						"{{jobId}}"
+					]
+				},
+				"description": "Get the status of a processing job"
+			},
+			"response": [
+				{
+					"name": "Job Found",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/jobs/550e8400-e29b-41d4-a716-446655440000",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"jobs",
+								"550e8400-e29b-41d4-a716-446655440000"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"jobId\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"reportId\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"userId\": \"user-uuid\",\n  \"url\": \"https://example.com/property-listing\",\n  \"status\": \"completed\",\n  \"createdAt\": \"2024-01-01T00:00:00.000Z\",\n  \"updatedAt\": \"2024-01-01T00:05:00.000Z\"\n}"
+				},
+				{
+					"name": "Job Not Found",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/jobs/invalid-job-id",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"jobs",
+								"invalid-job-id"
+							]
+						}
+					},
+					"status": "Not Found",
+					"code": 404,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n  \"error\": \"Job not found\"\n}"
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "supabaseJwtToken",
+			"value": "your-supabase-jwt-token",
+			"type": "string"
+		},
+		{
+			"key": "jobId",
+			"value": "550e8400-e29b-41d4-a716-446655440000",
+			"type": "string"
+		}
+	]
+}
