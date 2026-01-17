@@ -12,6 +12,10 @@ function convertFirecrawlPropertyDetails(
     tenure: firecrawlDetails.tenure,
     guidePrice: firecrawlDetails.guide_price,
     auctionDate: firecrawlDetails.auction_date,
+    epcRating: firecrawlDetails.epc_rating,
+    councilTax: firecrawlDetails.council_tax,
+    buyersCharge: firecrawlDetails.buyers_charge,
+    administrationCharge: firecrawlDetails.administration_charge_band,
   };
 }
 
@@ -35,6 +39,10 @@ function mergePropertyDetails(
     tenure: converted.tenure || openaiDetails.tenure,
     guidePrice: converted.guidePrice || openaiDetails.guidePrice,
     auctionDate: converted.auctionDate || openaiDetails.auctionDate,
+    epcRating: converted.epcRating || openaiDetails.epcRating,
+    councilTax: converted.councilTax || openaiDetails.councilTax,
+    buyersCharge: converted.buyersCharge || openaiDetails.buyersCharge,
+    administrationCharge: converted.administrationCharge || openaiDetails.administrationCharge,
   };
 }
 

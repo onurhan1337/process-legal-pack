@@ -7,7 +7,7 @@ import { Document } from '../../types/report';
 test('transformToReportAnalysis should transform structured analysis to report analysis', () => {
   const structuredAnalysis: StructuredAnalysisResponse = {
     title: {
-      issues: [{ severity: 'high', description: 'Test issue' }],
+      issues: [{ severity: 'critical', description: 'Test issue' }],
       description: 'Test description',
     },
     ownership: {
