@@ -121,14 +121,19 @@ export async function processJob(job: ProcessingJob): Promise<void> {
       .map(doc => `=== ${doc.fileName} ===\n${doc.text}`)
       .join('\n\n');
     
-    logger.info('Generating structured analysis', { jobId });
-    const structuredAnalysis = await retryWithBackoff(() =>
-      generateStructuredAnalysis(combinedText, urlContent)
-    );
-    
     logger.info('Generating key findings', { jobId, documentCount: extractedDocs.length });
     const keyFindings = await generateKeyFindingsForDocuments(
       extractedDocs.map(doc => ({ fileName: doc.fileName, text: doc.text }))
+    );
+    
+    const keyFindingsWithNames = extractedDocs.map((doc, index) => ({
+      fileName: doc.fileName,
+      findings: keyFindings[index] || 'No key findings available.',
+    }));
+    
+    logger.info('Generating structured analysis', { jobId });
+    const structuredAnalysis = await retryWithBackoff(() =>
+      generateStructuredAnalysis(combinedText, urlContent, keyFindingsWithNames)
     );
     
     const documentsWithFindings: Document[] = extractedDocs.map((doc, index) => ({
