@@ -7,14 +7,14 @@ export interface AuthenticatedRequest extends Request {
   userEmail?: string;
 }
 
-export function authMiddleware(
+export async function authMiddleware(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    const { userId, email } = verifySupabaseJWT(
+    const { userId, email } = await verifySupabaseJWT(
       extractTokenFromHeader(authHeader)
     );
     
@@ -24,9 +24,19 @@ export function authMiddleware(
     next();
   } catch (error) {
     logger.warn('Authentication failed', error, { path: req.path });
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Invalid or missing authentication token',
-    });
+    
+    if (!res.headersSent) {
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid or missing authentication token',
+      });
+      return;
+    } else {
+      logger.error('Authentication failed but headers already sent - blocking request', { 
+        path: req.path,
+        message: 'Request handler will not proceed due to authentication failure'
+      });
+      return;
+    }
   }
 }

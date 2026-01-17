@@ -94,6 +94,10 @@ export async function updateReportAnalysis(
     }
     
     logger.info('Report updated successfully', { reportId, status });
+    
+    if (error) {
+      logger.warn('Report processing error stored in DB', { reportId, error });
+    }
   } catch (error) {
     logger.error('Error updating report', error, { reportId });
     throw error;
