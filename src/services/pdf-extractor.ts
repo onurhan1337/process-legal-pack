@@ -1,17 +1,7 @@
 import mammoth from 'mammoth';
 import { logger } from '../utils/logger';
 
-let pdfjsLib: typeof import('pdfjs-dist') | null = null;
-
-async function getPdfjsLib() {
-  if (!pdfjsLib) {
-    pdfjsLib = await import('pdfjs-dist');
-    if (typeof window === 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-    }
-  }
-  return pdfjsLib;
-}
+const pdfParse = require('pdf-parse');
 
 export interface ExtractedDocument {
   fileName: string;
@@ -24,38 +14,49 @@ export async function extractPdfText(
   fileName: string
 ): Promise<{ text: string; pages: number }> {
   try {
-    const pdfjs = await getPdfjsLib();
-    const loadingTask = pdfjs.getDocument({
-      data: pdfBuffer,
-      useSystemFonts: true,
-    });
-    
-    const pdf = await loadingTask.promise;
-    const numPages = pdf.numPages;
-    
-    const pagePromises: Promise<string>[] = [];
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      pagePromises.push(
-        pdf.getPage(pageNum).then(async (page) => {
-          const textContent = await page.getTextContent();
-          return textContent.items
-            .map((item) => {
-              if ('str' in item) {
-                return item.str || '';
-              }
-              return '';
-            })
-            .join(' ');
-        })
-      );
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      throw new Error('PDF buffer is empty');
     }
     
-    const pageTexts = await Promise.all(pagePromises);
-    const fullText = pageTexts.join('\n');
+    const pdfHeader = pdfBuffer.subarray(0, 4).toString();
+    if (pdfHeader !== '%PDF') {
+      logger.warn('Buffer does not appear to be a valid PDF', { fileName, header: pdfHeader });
+    }
+    
+    const data = await pdfParse(pdfBuffer);
+    const pageCount = data.numpages ?? data.numPages ?? 0;
+    const extractedText = data.text || '';
+    
+    if (pageCount === 0 && extractedText && extractedText.trim().length > 0) {
+      logger.warn('PDF page count is 0 but text exists', { 
+        fileName, 
+        textLength: extractedText.length,
+        dataKeys: Object.keys(data),
+        numpages: data.numpages,
+        numPages: data.numPages
+      });
+      
+      const wordCount = extractedText.trim().split(/\s+/).length;
+      const estimatedPages = Math.max(1, Math.ceil(wordCount / 500));
+      logger.info('Using estimated page count', { fileName, estimatedPages });
+      
+      return {
+        text: extractedText.trim(),
+        pages: estimatedPages,
+      };
+    }
+    
+    if (!extractedText || extractedText.trim().length === 0) {
+      logger.warn('PDF has no extractable text', { fileName, pageCount });
+      return {
+        text: '',
+        pages: pageCount,
+      };
+    }
     
     return {
-      text: fullText.trim(),
-      pages: numPages,
+      text: extractedText.trim(),
+      pages: pageCount,
     };
   } catch (error) {
     logger.error('Error extracting PDF text', error, { fileName });

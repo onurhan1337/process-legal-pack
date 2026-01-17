@@ -48,18 +48,33 @@ export interface StructuredAnalysisResponse {
     guidePrice?: string;
     auctionDate?: string;
     auctionDateNote?: string;
+    epcRating?: string;
+    councilTax?: string;
+    buyersCharge?: string;
+    administrationCharge?: string;
   };
 }
 
 export async function generateStructuredAnalysis(
   combinedText: string,
-  urlContent?: string
+  urlContent?: string,
+  keyFindings?: Array<{ fileName: string; findings: string }>
 ): Promise<StructuredAnalysisResponse> {
   const fullText = urlContent
     ? `URL Content:\n${urlContent}\n\n---\n\nLegal Pack Documents:\n${combinedText}`
     : combinedText;
   
-  const userPrompt = STRUCTURED_ANALYSIS_USER_PROMPT_TEMPLATE.replace('{content}', fullText);
+  let keyFindingsSection = '';
+  if (keyFindings && keyFindings.length > 0) {
+    const findingsText = keyFindings
+      .map(kf => `=== Key Findings: ${kf.fileName} ===\n${kf.findings}`)
+      .join('\n\n');
+    keyFindingsSection = `\n\n---\n\nKEY FINDINGS FROM INDIVIDUAL DOCUMENTS:\n\nCRITICAL INSTRUCTIONS:\n1. The following key findings contain IMPORTANT information that MUST be extracted and categorized\n2. Go through EACH numbered point, bullet point, or distinct finding\n3. For EACH finding, create a separate issue entry in the appropriate section\n4. DO NOT summarize or combine multiple findings into one issue - break them down\n5. If key findings contain 10 important points, extract ALL 10 into structured sections\n6. Be COMPREHENSIVE - extract every relevant piece of information\n7. Do not leave important information only in key findings - it MUST appear in structured sections\n\n${findingsText}\n\nRemember: Extract comprehensively. Each distinct risk, obligation, charge, or concern should be its own entry in the appropriate section.`;
+  }
+  
+  const userPrompt = STRUCTURED_ANALYSIS_USER_PROMPT_TEMPLATE
+    .replace('{content}', fullText)
+    .replace('{keyFindingsSection}', keyFindingsSection);
 
   try {
     const completion = await openai.chat.completions.create({
@@ -90,6 +105,14 @@ export async function generateKeyFindings(
   fileName: string,
   extractedText: string
 ): Promise<string> {
+  if (!extractedText || extractedText.trim().length === 0) {
+    return 'No text content available for analysis.';
+  }
+
+  if (extractedText.startsWith('Error extracting text:')) {
+    return `Unable to extract text from ${fileName}. ${extractedText}`;
+  }
+
   const userPrompt = KEY_FINDINGS_USER_PROMPT_TEMPLATE
     .replace('{fileName}', fileName)
     .replace('{content}', extractedText);
@@ -110,7 +133,15 @@ export async function generateKeyFindings(
       throw new Error('No content returned from OpenAI');
     }
     
-    return content.trim();
+    const trimmedContent = content.trim();
+    
+    if (trimmedContent.toLowerCase().includes('i am unable to extract text') || 
+        trimmedContent.toLowerCase().includes('i am unable to access') ||
+        trimmedContent.toLowerCase().includes('unable to extract text from the provided pdf')) {
+      return `Unable to extract meaningful text from ${fileName}. The document may be image-based or corrupted.`;
+    }
+    
+    return trimmedContent;
   } catch (error) {
     logger.error('Error generating key findings', error, { fileName });
     return `Error generating key findings: ${error instanceof Error ? error.message : String(error)}`;
