@@ -1,12 +1,12 @@
 export interface ReportIssue {
-  severity: 'high' | 'medium' | 'low';
+  severity: 'critical' | 'warning' | 'info';
   description: string;
   recommendation?: string;
 }
 
 export interface Charge {
   type: string;
-  amount?: number;
+  amount?: string;
   description: string;
 }
 
@@ -19,6 +19,10 @@ export interface PropertyDetails {
   guidePrice?: string;
   auctionDate?: string;
   auctionDateNote?: string;
+  epcRating?: string;
+  councilTax?: string;
+  buyersCharge?: string;
+  administrationCharge?: string;
 }
 
 export interface PropertyDetailsWithCitations {
