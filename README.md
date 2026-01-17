@@ -82,6 +82,8 @@ Content-Type: application/json
 }
 ```
 
+**Note:** `userId` is optional - if not provided, it will be extracted from the JWT token. `url` is also optional.
+
 **Response (202 Accepted):**
 ```json
 {
@@ -90,6 +92,55 @@ Content-Type: application/json
   "message": "Job queued for processing"
 }
 ```
+
+## Frontend Integration (React)
+
+### Example: Calling the API from React
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function processLegalPack(reportId: string, url?: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session) {
+    throw new Error('Not authenticated');
+  }
+
+  const response = await fetch('https://your-backend-url.com/process', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      reportId,
+      userId: session.user.id,
+      url,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to start processing');
+  }
+
+  const result = await response.json();
+  return result;
+}
+```
+
+### Important Security Notes
+
+- **Never expose `WEBHOOK_SECRET` to the frontend** - It's only used server-to-server
+- The frontend only needs:
+  - Supabase JWT token (from `session.access_token`)
+  - `reportId` (required)
+  - `userId` (optional, extracted from JWT if not provided)
+  - `url` (optional)
+- The backend automatically includes `webhookSecret` when calling the Supabase webhook
 
 ### Get Job Status
 ```
