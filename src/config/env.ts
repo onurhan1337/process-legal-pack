@@ -18,7 +18,7 @@ export const config = {
     url: getEnvVar('SUPABASE_URL'),
     serviceRoleKey: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
     jwtSecret: getEnvVar('SUPABASE_JWT_SECRET'),
-    webhookUrl: getEnvVar('SUPABASE_WEBHOOK_URL'),
+    webhookUrl: process.env.SUPABASE_WEBHOOK_URL || '',
   },
   
   openai: {

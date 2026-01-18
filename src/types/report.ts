@@ -62,12 +62,6 @@ export interface Document {
   keyFindings: string;
 }
 
-export interface ASTAScore {
-  score: number;
-  maxScore: number;
-  description: string;
-}
-
 export interface ReportAnalysis {
   title: {
     issues: ReportIssue[];
@@ -96,7 +90,6 @@ export interface ReportAnalysis {
   };
   documents: Document[];
   propertyDetails: PropertyDetails;
-  astaScore?: ASTAScore;
 }
 
 export interface WebhookPayload {

@@ -72,17 +72,10 @@ export async function updateReportAnalysis(
     const updateData: {
       analysis_result: ReportAnalysis;
       status: string;
-      error?: string | null;
     } = {
       analysis_result: analysisResult,
       status,
     };
-    
-    if (error) {
-      updateData.error = error;
-    } else {
-      updateData.error = null;
-    }
     
     const { error: updateError } = await supabase
       .from('reports')
@@ -96,7 +89,7 @@ export async function updateReportAnalysis(
     logger.info('Report updated successfully', { reportId, status });
     
     if (error) {
-      logger.warn('Report processing error stored in DB', { reportId, error });
+      logger.warn('Report processing error (logged separately)', { reportId, error, status });
     }
   } catch (error) {
     logger.error('Error updating report', error, { reportId });
@@ -111,6 +104,11 @@ export async function callWebhook(
   error?: string
 ): Promise<void> {
   try {
+    if (!config.supabase.webhookUrl || config.supabase.webhookUrl.trim() === '') {
+      logger.warn('Webhook URL not configured, skipping webhook call', { reportId });
+      return;
+    }
+    
     const payload = {
       reportId,
       analysis_result: analysisResult,
@@ -119,21 +117,44 @@ export async function callWebhook(
       webhookSecret: config.webhook.secret,
     };
     
-    const response = await fetch(config.supabase.webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Webhook call failed: ${response.status} ${errorText}`);
+    try {
+      const response = await fetch(config.supabase.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.warn('Webhook call returned non-OK status', {
+          reportId,
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+        });
+        return;
+      }
+      
+      logger.info('Webhook called successfully', { reportId, status });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    
-    logger.info('Webhook called successfully', { reportId, status });
   } catch (error) {
-    logger.error('Error calling webhook', error, { reportId });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isTimeout = error instanceof Error && error.name === 'AbortError';
+    logger.warn('Webhook call failed (non-blocking)', {
+      reportId,
+      error: errorMessage,
+      isTimeout,
+      ...(config.nodeEnv === 'development' && { stack: error instanceof Error ? error.stack : undefined }),
+    });
   }
 }
