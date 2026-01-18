@@ -134,13 +134,13 @@ async function processLegalPack(reportId: string, url?: string) {
 
 ### Important Security Notes
 
-- **Never expose `WEBHOOK_SECRET` to the frontend** - It's only used server-to-server
+- **Never expose `WEBHOOK_SECRET` to the frontend** - It's only used server-to-server (optional, only needed if webhooks are configured)
 - The frontend only needs:
   - Supabase JWT token (from `session.access_token`)
   - `reportId` (required)
   - `userId` (optional, extracted from JWT if not provided)
   - `url` (optional)
-- The backend automatically includes `webhookSecret` when calling the Supabase webhook
+- The backend automatically includes `webhookSecret` in webhook payloads if configured (webhooks are optional)
 
 ### Get Job Status
 ```

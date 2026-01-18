@@ -109,13 +109,22 @@ export async function callWebhook(
       return;
     }
     
-    const payload = {
+    const payload: {
+      reportId: string;
+      analysis_result: ReportAnalysis;
+      status: 'completed' | 'failed';
+      error?: string;
+      webhookSecret?: string;
+    } = {
       reportId,
       analysis_result: analysisResult,
       status,
       error,
-      webhookSecret: config.webhook.secret,
     };
+    
+    if (config.webhook.secret) {
+      payload.webhookSecret = config.webhook.secret;
+    }
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);

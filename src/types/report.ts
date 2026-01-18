@@ -97,5 +97,5 @@ export interface WebhookPayload {
   analysis_result: ReportAnalysis;
   status: 'completed' | 'failed';
   error?: string;
-  webhookSecret: string;
+  webhookSecret?: string;
 }

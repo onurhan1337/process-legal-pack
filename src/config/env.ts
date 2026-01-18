@@ -30,6 +30,6 @@ export const config = {
   },
   
   webhook: {
-    secret: getEnvVar('WEBHOOK_SECRET'),
+    secret: process.env.WEBHOOK_SECRET || '',
   },
 } as const;
