@@ -48,7 +48,19 @@ Backend service for processing legal pack PDFs with OpenAI analysis and Firecraw
 
 ## Environment Variables
 
-See `.env.example` for all required environment variables.
+### Required Variables
+- `SUPABASE_URL` - Your Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (server-side only)
+- `SUPABASE_JWT_SECRET` - JWT secret for token verification
+- `OPENAI_API_KEY` - OpenAI API key for analysis
+
+### Optional Variables
+- `CORS_ORIGIN` - Allowed CORS origins (comma-separated). Defaults to `*` (all origins). For production, set to your frontend URL(s), e.g., `https://app.useasta.com`
+- `PORT` - Server port (default: 3000)
+- `NODE_ENV` - Environment (default: development)
+- `FIRECRAWL_API_KEY` - Firecrawl API key for URL scraping (optional)
+- `SUPABASE_WEBHOOK_URL` - Webhook URL for callbacks (optional)
+- `WEBHOOK_SECRET` - Secret for webhook authentication (optional)
 
 ## API Endpoints
 

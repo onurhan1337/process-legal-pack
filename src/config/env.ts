@@ -14,6 +14,11 @@ export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true,
+  },
+  
   supabase: {
     url: getEnvVar('SUPABASE_URL'),
     serviceRoleKey: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),

@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import { config } from './config/env';
 import { logger } from './utils/logger';
 import { authMiddleware, AuthenticatedRequest } from './middleware/auth';
@@ -6,6 +7,17 @@ import { processRoute } from './routes/process';
 import { startJobProcessor, getJob } from './workers/job-processor';
 
 const app = express();
+
+const corsOptions = {
+  origin: config.cors.origin === '*' 
+    ? true 
+    : config.cors.origin.split(',').map(origin => origin.trim()),
+  credentials: config.cors.credentials,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
