@@ -251,6 +251,25 @@ npm test
 
 The service is configured for deployment on Render. See `render.yaml` for configuration.
 
+### Render Deployment Setup
+
+1. **Using render.yaml (Recommended):**
+   - Connect your GitHub repository to Render
+   - Render will automatically detect and use `render.yaml`
+   - Ensure the build command is: `npm ci && npm run build`
+   - Ensure the start command is: `npm start`
+
+2. **Manual Configuration (if render.yaml isn't detected):**
+   - Go to your Render dashboard
+   - Navigate to your service settings
+   - Set the following:
+     - **Build Command:** `npm ci && npm run build`
+     - **Start Command:** `npm start`
+     - **Node Version:** 20.x or higher
+   - Make sure to set all required environment variables listed in `render.yaml`
+
+**Important:** The build command must include `npm run build` to compile TypeScript. If you see errors about missing `dist/index.js`, it means the build step didn't run.
+
 ## License
 
 MIT
