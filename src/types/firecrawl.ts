@@ -40,4 +40,5 @@ export interface FirecrawlResponse {
     description?: string;
     [key: string]: unknown;
   };
+  extract?: unknown;
 }

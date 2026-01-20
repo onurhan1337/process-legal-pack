@@ -88,13 +88,11 @@ export async function processJob(job: ProcessingJob): Promise<void> {
       throw new Error('No files found in report');
     }
     
-    logger.info('Downloading PDFs', { jobId, fileCount: report.file_paths.length });
     const downloadPromises = report.file_paths.map((filePath: string) =>
       retryWithBackoff(() => downloadPdf(filePath))
     );
     const pdfBuffers = await Promise.all(downloadPromises);
     
-    logger.info('Extracting text from PDFs', { jobId });
     const documents = report.file_paths.map((filePath: string, index: number) => ({
       buffer: pdfBuffers[index],
       fileName: filePath.split('/').pop() || `document-${index}.pdf`,
@@ -102,26 +100,20 @@ export async function processJob(job: ProcessingJob): Promise<void> {
     
     const extractedDocs = await extractMultipleDocuments(documents);
     
-    const urlPromise = url ? scrapeUrl(url) : Promise.resolve(null);
-    const firecrawlResult = await urlPromise;
+    const firecrawlResult = url ? await scrapeUrl(url) : null;
     const urlContent = firecrawlResult?.markdown;
     const firecrawlPropertyDetails = firecrawlResult?.propertyDetails;
     
-    if (url && firecrawlResult) {
-      if (firecrawlPropertyDetails) {
-        logger.info('URL scraped and property details extracted successfully', { jobId });
-      } else if (firecrawlResult.markdown) {
-        logger.info('URL scraped successfully', { jobId });
-      } else {
-        logger.warn('URL scraping failed or returned no content', { jobId });
-      }
-    }
+    const scrapedData = firecrawlResult ? {
+      markdown: firecrawlResult.markdown,
+      metadata: firecrawlResult.metadata,
+      extract: firecrawlResult.extract || firecrawlPropertyDetails || null,
+    } : undefined;
     
     const combinedText = extractedDocs
       .map(doc => `=== ${doc.fileName} ===\n${doc.text}`)
       .join('\n\n');
     
-    logger.info('Generating key findings', { jobId, documentCount: extractedDocs.length });
     const keyFindings = await generateKeyFindingsForDocuments(
       extractedDocs.map(doc => ({ fileName: doc.fileName, text: doc.text }))
     );
@@ -131,7 +123,6 @@ export async function processJob(job: ProcessingJob): Promise<void> {
       findings: keyFindings[index] || 'No key findings available.',
     }));
     
-    logger.info('Generating structured analysis', { jobId });
     const structuredAnalysis = await retryWithBackoff(() =>
       generateStructuredAnalysis(combinedText, urlContent, keyFindingsWithNames)
     );
@@ -148,14 +139,12 @@ export async function processJob(job: ProcessingJob): Promise<void> {
       firecrawlPropertyDetails
     );
     
-    logger.info('Updating report', { jobId });
     await Promise.all([
       callWebhook(reportId, analysisResult, 'completed'),
-      updateReportAnalysis(reportId, analysisResult, 'completed'),
+      updateReportAnalysis(reportId, analysisResult, 'completed', undefined, scrapedData),
     ]);
     
     updateJobStatus(jobId, 'completed');
-    logger.info('Job completed successfully', { jobId, reportId });
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -165,18 +154,8 @@ export async function processJob(job: ProcessingJob): Promise<void> {
     
     try {
       await Promise.all([
-        callWebhook(
-          reportId,
-          {} as ReportAnalysis,
-          'failed',
-          errorMessage
-        ),
-        updateReportAnalysis(
-          reportId,
-          {} as ReportAnalysis,
-          'failed',
-          errorMessage
-        ),
+        callWebhook(reportId, {} as ReportAnalysis, 'failed', errorMessage),
+        updateReportAnalysis(reportId, {} as ReportAnalysis, 'failed', errorMessage),
       ]);
     } catch (updateError) {
       logger.error('Failed to update report with error status', updateError, { jobId });

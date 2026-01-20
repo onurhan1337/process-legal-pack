@@ -66,16 +66,27 @@ export async function updateReportAnalysis(
   reportId: string,
   analysisResult: ReportAnalysis,
   status: 'completed' | 'failed',
-  error?: string
+  errorMessage?: string,
+  scrapedData?: { markdown?: string; metadata?: Record<string, unknown>; extract?: unknown }
 ): Promise<void> {
   try {
     const updateData: {
       analysis_result: ReportAnalysis;
       status: string;
+      error?: string;
+      scraped_data?: { markdown?: string; metadata?: Record<string, unknown>; extract?: unknown };
     } = {
       analysis_result: analysisResult,
       status,
     };
+    
+    if (errorMessage) {
+      updateData.error = errorMessage;
+    }
+    
+    if (scrapedData) {
+      updateData.scraped_data = scrapedData;
+    }
     
     const { error: updateError } = await supabase
       .from('reports')
@@ -84,12 +95,6 @@ export async function updateReportAnalysis(
     
     if (updateError) {
       throw new Error(`Failed to update report: ${updateError.message}`);
-    }
-    
-    logger.info('Report updated successfully', { reportId, status });
-    
-    if (error) {
-      logger.warn('Report processing error (logged separately)', { reportId, error, status });
     }
   } catch (error) {
     logger.error('Error updating report', error, { reportId });
@@ -103,67 +108,57 @@ export async function callWebhook(
   status: 'completed' | 'failed',
   error?: string
 ): Promise<void> {
+  if (!config.supabase.webhookUrl?.trim()) {
+    return;
+  }
+  
+  const payload: {
+    reportId: string;
+    analysis_result: ReportAnalysis;
+    status: 'completed' | 'failed';
+    error?: string;
+    webhookSecret?: string;
+  } = {
+    reportId,
+    analysis_result: analysisResult,
+    status,
+    error,
+  };
+  
+  if (config.webhook.secret) {
+    payload.webhookSecret = config.webhook.secret;
+  }
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  
   try {
-    if (!config.supabase.webhookUrl || config.supabase.webhookUrl.trim() === '') {
-      logger.warn('Webhook URL not configured, skipping webhook call', { reportId });
-      return;
-    }
+    const response = await fetch(config.supabase.webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
     
-    const payload: {
-      reportId: string;
-      analysis_result: ReportAnalysis;
-      status: 'completed' | 'failed';
-      error?: string;
-      webhookSecret?: string;
-    } = {
-      reportId,
-      analysis_result: analysisResult,
-      status,
-      error,
-    };
+    clearTimeout(timeoutId);
     
-    if (config.webhook.secret) {
-      payload.webhookSecret = config.webhook.secret;
-    }
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    try {
-      const response = await fetch(config.supabase.webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn('Webhook call failed', {
+        reportId,
+        status: response.status,
+        error: errorText,
       });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.warn('Webhook call returned non-OK status', {
-          reportId,
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText,
-        });
-        return;
-      }
-      
-      logger.info('Webhook called successfully', { reportId, status });
-    } finally {
-      clearTimeout(timeoutId);
     }
   } catch (error) {
+    clearTimeout(timeoutId);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isTimeout = error instanceof Error && error.name === 'AbortError';
-    logger.warn('Webhook call failed (non-blocking)', {
+    logger.warn('Webhook call failed', {
       reportId,
       error: errorMessage,
-      isTimeout,
-      ...(config.nodeEnv === 'development' && { stack: error instanceof Error ? error.stack : undefined }),
+      isTimeout: error instanceof Error && error.name === 'AbortError',
     });
   }
 }
