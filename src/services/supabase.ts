@@ -13,7 +13,14 @@ export interface ReportRecord {
   user_id: string;
   status: string;
   file_paths?: string[];
+  property_address?: string | null;
   [key: string]: unknown;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string | null;
 }
 
 export async function downloadPdf(filePath: string): Promise<Buffer> {
@@ -99,6 +106,31 @@ export async function updateReportAnalysis(
   } catch (error) {
     logger.error('Error updating report', error, { reportId });
     throw error;
+  }
+}
+
+export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('id', userId)
+      .single();
+    
+    if (error) {
+      logger.error('Error fetching user profile', error, { userId });
+      return null;
+    }
+    
+    if (!data || !data.email) {
+      logger.warn('User profile not found or missing email', { userId });
+      return null;
+    }
+    
+    return data as UserProfile;
+  } catch (error) {
+    logger.error('Error fetching user profile', error, { userId });
+    return null;
   }
 }
 

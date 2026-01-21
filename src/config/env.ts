@@ -37,4 +37,8 @@ export const config = {
   webhook: {
     secret: process.env.WEBHOOK_SECRET || '',
   },
+  
+  report: {
+    baseUrl: process.env.REPORT_BASE_URL || 'https://app.useasta.com',
+  },
 } as const;

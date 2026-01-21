@@ -1,11 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ProcessingJob, JobStatus } from '../types/job';
 import { ReportAnalysis, Document } from '../types/report';
-import { downloadPdf, getReport, callWebhook, updateReportAnalysis } from '../services/supabase';
+import { downloadPdf, getReport, callWebhook, updateReportAnalysis, getUserProfile } from '../services/supabase';
 import { extractMultipleDocuments } from '../services/pdf-extractor';
 import { generateStructuredAnalysis, generateKeyFindingsForDocuments } from '../services/openai';
 import { scrapeUrl } from '../services/firecrawl';
 import { transformToReportAnalysis } from '../services/transformer';
+import { sendAnalysisCompleteEmail } from '../services/email';
 import { logger } from '../utils/logger';
 
 const jobs = new Map<string, ProcessingJob>();
@@ -145,6 +146,28 @@ export async function processJob(job: ProcessingJob): Promise<void> {
     ]);
     
     updateJobStatus(jobId, 'completed');
+    
+    try {
+      const profile = await getUserProfile(userId);
+      if (profile?.email) {
+        await sendAnalysisCompleteEmail(
+          profile.email,
+          profile.full_name,
+          reportId,
+          report.property_address || null
+        );
+      } else {
+        logger.warn('Cannot send email: user profile not found or missing email', {
+          reportId,
+          userId,
+        });
+      }
+    } catch (emailError) {
+      logger.error('Failed to send completion email', emailError, {
+        reportId,
+        userId,
+      });
+    }
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
