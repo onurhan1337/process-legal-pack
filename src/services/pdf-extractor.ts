@@ -47,7 +47,7 @@ export async function extractPdfText(
     }
     
     if (!extractedText || extractedText.trim().length === 0) {
-      logger.warn('PDF has no extractable text', { fileName, pageCount });
+      logger.warn('PDF has no extractable text (scanned/image-based)', { fileName, pageCount });
       return {
         text: '',
         pages: pageCount,

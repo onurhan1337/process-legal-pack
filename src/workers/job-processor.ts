@@ -115,13 +115,28 @@ export async function processJob(job: ProcessingJob): Promise<void> {
       .map(doc => `=== ${doc.fileName} ===\n${doc.text}`)
       .join('\n\n');
     
-    const keyFindings = await generateKeyFindingsForDocuments(
+    const keyFindingsResult = await generateKeyFindingsForDocuments(
       extractedDocs.map(doc => ({ fileName: doc.fileName, text: doc.text }))
     );
     
+    logger.info('Key findings extraction complete', {
+      reportId,
+      documentCount: extractedDocs.length,
+      processingTimeMs: keyFindingsResult.processingTimeMs,
+      avgTimePerDoc: Math.round(keyFindingsResult.processingTimeMs / extractedDocs.length),
+    });
+    
+    if (keyFindingsResult.failedCount > 0) {
+      logger.warn('Key findings extraction had failures', {
+        reportId,
+        failedCount: keyFindingsResult.failedCount,
+        failedDocuments: keyFindingsResult.failedDocuments,
+      });
+    }
+    
     const keyFindingsWithNames = extractedDocs.map((doc, index) => ({
       fileName: doc.fileName,
-      findings: keyFindings[index] || 'No key findings available.',
+      findings: keyFindingsResult.findings[index] || 'No key findings available.',
     }));
     
     const structuredAnalysis = await retryWithBackoff(() =>
@@ -131,7 +146,7 @@ export async function processJob(job: ProcessingJob): Promise<void> {
     const documentsWithFindings: Document[] = extractedDocs.map((doc, index) => ({
       name: doc.fileName,
       pages: doc.pages,
-      keyFindings: keyFindings[index] || 'No key findings available.',
+      keyFindings: keyFindingsResult.findings[index] || 'No key findings available.',
     }));
     
     const analysisResult = transformToReportAnalysis(

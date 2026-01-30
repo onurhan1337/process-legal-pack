@@ -10,6 +10,8 @@ function getEnvVar(key: string, defaultValue?: string): string {
   return value;
 }
 
+export type LLMProvider = 'openai' | 'kimi';
+
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -26,8 +28,19 @@ export const config = {
     webhookUrl: process.env.SUPABASE_WEBHOOK_URL || '',
   },
   
+  llm: {
+    provider: (process.env.LLM_PROVIDER || 'kimi') as LLMProvider,
+    batchSize: parseInt(process.env.LLM_BATCH_SIZE || '5', 10),
+    concurrency: parseInt(process.env.LLM_CONCURRENCY || '2', 10),
+    useFastModelForKeyFindings: process.env.LLM_USE_FAST_MODEL !== 'false',
+  },
+  
   openai: {
     apiKey: getEnvVar('OPENAI_API_KEY'),
+  },
+  
+  moonshot: {
+    apiKey: process.env.MOONSHOT_API_KEY || '',
   },
   
   firecrawl: {
