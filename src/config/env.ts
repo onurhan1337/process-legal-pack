@@ -10,6 +10,10 @@ function getEnvVar(key: string, defaultValue?: string): string {
   return value;
 }
 
+function getOptionalEnvVar(key: string, defaultValue: string = ''): string {
+  return process.env[key] || defaultValue;
+}
+
 export type LLMProvider = 'openai' | 'kimi';
 
 export const config = {
@@ -53,5 +57,20 @@ export const config = {
   
   report: {
     baseUrl: process.env.REPORT_BASE_URL || 'https://app.useasta.com',
+  },
+  
+  stripe: {
+    secretKey: getOptionalEnvVar('STRIPE_SECRET_KEY'),
+    webhookSecret: getOptionalEnvVar('STRIPE_WEBHOOK_SECRET'),
+    priceSingleReport: getOptionalEnvVar('STRIPE_PRICE_SINGLE_REPORT'),
+    priceProMonthly: getOptionalEnvVar('STRIPE_PRICE_PRO_MONTHLY'),
+    prices: {
+      starter: getOptionalEnvVar('STRIPE_PRICE_STARTER_MONTHLY'),
+      professional: getOptionalEnvVar('STRIPE_PRICE_PROFESSIONAL_MONTHLY'),
+    },
+  },
+  
+  frontend: {
+    url: getOptionalEnvVar('FRONTEND_URL', 'https://app.useasta.com'),
   },
 } as const;
