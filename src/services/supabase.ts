@@ -3,7 +3,7 @@ import { config } from '../config/env';
 import { ReportAnalysis } from '../types/report';
 import { logger } from '../utils/logger';
 
-const supabase: SupabaseClient = createClient(
+export const supabase: SupabaseClient = createClient(
   config.supabase.url,
   config.supabase.serviceRoleKey
 );
@@ -111,23 +111,23 @@ export async function updateReportAnalysis(
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, full_name')
-      .eq('id', userId)
-      .single();
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
     
     if (error) {
-      logger.error('Error fetching user profile', error, { userId });
+      logger.error('Error fetching user from auth', error, { userId });
       return null;
     }
     
-    if (!data || !data.email) {
-      logger.warn('User profile not found or missing email', { userId });
+    if (!data?.user?.email) {
+      logger.warn('User not found or missing email', { userId });
       return null;
     }
     
-    return data as UserProfile;
+    return {
+      id: data.user.id,
+      email: data.user.email,
+      full_name: data.user.user_metadata?.full_name || null,
+    };
   } catch (error) {
     logger.error('Error fetching user profile', error, { userId });
     return null;
