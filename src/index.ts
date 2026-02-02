@@ -3,8 +3,11 @@ import cors from 'cors';
 import { config } from './config/env';
 import { logger } from './utils/logger';
 import { authMiddleware, AuthenticatedRequest } from './middleware/auth';
+import { billingMiddleware, BillingRequest } from './middleware/billing';
 import { processRoute } from './routes/process';
 import { startJobProcessor, getJob } from './workers/job-processor';
+import stripeRoutes, { webhookRouter } from './routes/stripe';
+import billingRoutes from './routes/billing';
 
 const app = express();
 
@@ -18,6 +21,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+app.use('/stripe/webhook', webhookRouter);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -38,7 +43,7 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/jobs/:jobId', (req: Request, res: Response) => {
+app.get('/jobs/:jobId', authMiddleware, (req: AuthenticatedRequest, res: Response) => {
   const { jobId } = req.params;
   const job = getJob(jobId);
   
@@ -47,10 +52,18 @@ app.get('/jobs/:jobId', (req: Request, res: Response) => {
     return;
   }
   
+  if (job.userId !== req.userId) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  
   res.json(job);
 });
 
-app.post('/process', authMiddleware, (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+app.use('/stripe', stripeRoutes);
+app.use('/billing', billingRoutes);
+
+app.post('/process', authMiddleware, billingMiddleware, (req: BillingRequest, res: Response, next: NextFunction) => {
   if (req.body.userId && req.body.userId !== req.userId) {
     res.status(403).json({
       error: 'Forbidden',
