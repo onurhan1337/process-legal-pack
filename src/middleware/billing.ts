@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './auth';
 import { logger } from '../utils/logger';
-import { checkUserAccess, checkReportPaymentStatus, consumeUsage, consumeTrialCredit } from '../services/billing';
+import { checkUserAccess, checkReportPaymentStatus } from '../services/billing';
 import type { UserAccess } from '../types/billing';
 
 export interface BillingRequest extends AuthenticatedRequest {
@@ -28,7 +28,7 @@ export async function billingMiddleware(
 
   try {
     if (reportId) {
-      const isPaid = await checkReportPaymentStatus(reportId);
+      const isPaid = await checkReportPaymentStatus(reportId, userId);
       if (isPaid) {
         logger.info('Report already paid, proceeding', { reportId });
         next();
@@ -103,21 +103,5 @@ export async function optionalBillingCheck(
     next();
   } catch {
     next();
-  }
-}
-
-export async function consumeUserCredit(
-  userId: string,
-  reportId: string,
-  isTrial: boolean
-): Promise<boolean> {
-  try {
-    if (isTrial) {
-      return await consumeTrialCredit(userId, reportId);
-    }
-    return await consumeUsage(userId, reportId);
-  } catch (error) {
-    logger.error('Failed to consume user credit', error, { userId, reportId, isTrial });
-    return false;
   }
 }

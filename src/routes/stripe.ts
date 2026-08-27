@@ -13,7 +13,6 @@ import {
   handleInvoicePaymentSucceeded,
   handleInvoicePaymentFailed,
   handleRefund,
-  logPaymentEvent,
   getActiveUserSubscription,
   markSubscriptionCanceled,
 } from '../services/billing';
@@ -76,33 +75,32 @@ router.post(
       const stripeCustomerId = await getOrCreateStripeCustomer(userId, userEmail);
       const stripe = getStripeClient();
 
-      if (mode === 'subscription' && planId) {
-        const existingSubscription = await getActiveUserSubscription(userId);
+      let existingSub = mode === 'subscription' ? await getActiveUserSubscription(userId) : null;
 
-        if (existingSubscription?.stripe_subscription_id) {
-          if (existingSubscription.plan_id === planId) {
-            res.status(400).json({ error: 'You are already on this plan' });
-            return;
-          }
+      if (mode === 'subscription' && planId && existingSub?.stripe_subscription_id) {
+        if (existingSub.plan_id === planId) {
+          res.status(400).json({ error: 'You are already on this plan' });
+          return;
+        }
 
-          try {
-            await stripe.subscriptions.retrieve(existingSubscription.stripe_subscription_id);
-          } catch (err) {
-            const stripeError = err as StripeError;
-            if (stripeError.statusCode === 404 || stripeError.code === 'resource_missing') {
-              await markSubscriptionCanceled(existingSubscription.id);
-              logger.info('Invalid subscription canceled, continuing with new checkout');
-            } else {
-              throw err;
-            }
-          }
+        try {
+          await stripe.subscriptions.retrieve(existingSub.stripe_subscription_id);
 
           logger.info('Creating upgrade checkout session', {
             userId,
-            currentPlan: existingSubscription.plan_id,
+            currentPlan: existingSub.plan_id,
             newPlan: planId,
-            currentUsage: existingSubscription.usage_count,
+            currentUsage: existingSub.usage_count,
           });
+        } catch (err) {
+          const stripeError = err as StripeError;
+          if (stripeError.statusCode === 404 || stripeError.code === 'resource_missing') {
+            await markSubscriptionCanceled(existingSub.id);
+            existingSub = null;
+            logger.info('Invalid subscription canceled, continuing with new checkout');
+          } else {
+            throw err;
+          }
         }
       }
 
@@ -117,7 +115,6 @@ router.post(
         return;
       }
 
-      const existingSub = mode === 'subscription' ? await getActiveUserSubscription(userId) : null;
       const existingSubToCancel = existingSub?.stripe_subscription_id || '';
       const existingUsageCount = existingSub?.usage_count ?? 0;
 
@@ -222,22 +219,41 @@ webhookRouter.post(
       return;
     }
 
-    const { data: existingLog } = await supabase
-      .from('payment_logs')
-      .select('id')
-      .eq('stripe_event_id', event.id)
-      .is('error', null)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingLog) {
-      logger.info('Duplicate webhook event, skipping', { eventId: event.id, eventType: event.type });
-      res.json({ received: true, duplicate: true });
-      return;
-    }
-
+    // Atomic idempotency: the insert on payment_logs (stripe_event_id UNIQUE)
+    // is the lock. A conflict means another delivery got there first — only
+    // skip if that delivery actually succeeded (error IS NULL).
     const eventPayload = event.data.object as unknown as Record<string, unknown>;
-    await logPaymentEvent(event.type, event.id, eventPayload);
+    const { error: logInsertError } = await supabase.from('payment_logs').insert({
+      event_type: event.type,
+      stripe_event_id: event.id,
+      payload: eventPayload,
+    });
+
+    if (logInsertError) {
+      if (logInsertError.code === '23505') {
+        const { data: existingLog } = await supabase
+          .from('payment_logs')
+          .select('error')
+          .eq('stripe_event_id', event.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingLog && existingLog.error === null) {
+          logger.info('Duplicate webhook event, skipping', { eventId: event.id, eventType: event.type });
+          res.json({ received: true, duplicate: true });
+          return;
+        }
+        // Previous attempt failed — clear the error and retry the handlers.
+        await supabase
+          .from('payment_logs')
+          .update({ error: null })
+          .eq('stripe_event_id', event.id);
+      } else {
+        logger.error('Failed to record webhook event', logInsertError, { eventId: event.id });
+        res.status(500).json({ error: 'Failed to record webhook event' });
+        return;
+      }
+    }
 
     try {
       switch (event.type) {
@@ -269,12 +285,13 @@ webhookRouter.post(
       logger.info('Webhook event processed successfully', { eventId: event.id, eventType: event.type });
     } catch (error) {
       logger.error(`Error handling webhook event ${event.type}`, error);
-      await logPaymentEvent(
-        event.type,
-        event.id,
-        eventPayload,
-        error instanceof Error ? error.message : 'Unknown error'
-      );
+      await supabase
+        .from('payment_logs')
+        .update({ error: error instanceof Error ? error.message : 'Unknown error' })
+        .eq('stripe_event_id', event.id);
+      // Non-2xx so Stripe retries the event instead of silently dropping it.
+      res.status(500).json({ error: 'Webhook handler failed' });
+      return;
     }
 
     res.json({ received: true });

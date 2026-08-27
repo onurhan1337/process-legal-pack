@@ -5,17 +5,23 @@ import { logger } from './utils/logger';
 import { authMiddleware, AuthenticatedRequest } from './middleware/auth';
 import { billingMiddleware, BillingRequest } from './middleware/billing';
 import { processRoute } from './routes/process';
-import { startJobProcessor, getJob } from './workers/job-processor';
+import { startJobProcessor, getJob, waitForActiveJobs } from './workers/job-processor';
 import stripeRoutes, { webhookRouter } from './routes/stripe';
 import billingRoutes from './routes/billing';
 
 const app = express();
 
+// Behind Render's proxy: makes req.ip and the rate limiters see the client IP.
+app.set('trust proxy', 1);
+
+const wildcardOrigin = config.cors.origin === '*';
 const corsOptions = {
-  origin: config.cors.origin === '*' 
-    ? true 
+  origin: wildcardOrigin
+    ? true
     : config.cors.origin.split(',').map(origin => origin.trim()),
-  credentials: config.cors.credentials,
+  // Reflecting any origin with credentials enabled is an open door; only
+  // allow credentials when an explicit origin allowlist is configured.
+  credentials: wildcardOrigin ? false : config.cors.credentials,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
@@ -114,12 +120,12 @@ app.listen(PORT, () => {
   startJobProcessor();
 });
 
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
+async function shutdown(signal: string): Promise<void> {
+  logger.info(`${signal} received, draining in-flight jobs before exit`);
+  await waitForActiveJobs();
+  logger.info('Shutdown complete');
   process.exit(0);
-});
+}
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -77,7 +77,7 @@ npm run dev            # development
 npm run build && npm start
 ```
 
-Apply the SQL migrations in `supabase/migrations/` to your Supabase project (billing tables, RPC functions, RLS policies).
+> **Migrations:** the canonical, complete migration set (billing tables, RPC functions, RLS policies) lives in the [asta-legal-insight](https://github.com/astahq/asta-legal-insight) repo under `supabase/migrations/`. The copies in this repo's `supabase/migrations/` are a stale subset kept for reference — apply the dashboard repo's migrations to your Supabase project.
 
 ## Environment Variables
 
@@ -87,7 +87,6 @@ Apply the SQL migrations in `supabase/migrations/` to your Supabase project (bil
 |---|---|
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (server-side only) |
-| `SUPABASE_JWT_SECRET` | JWT secret for token verification |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `MOONSHOT_API_KEY` | Required when `LLM_PROVIDER=kimi` (default) |
 

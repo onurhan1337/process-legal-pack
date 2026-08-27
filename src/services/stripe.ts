@@ -14,10 +14,7 @@ export function getStripeClient(): Stripe {
 }
 
 export function isStripeConfigured(): boolean {
-  return Boolean(
-    config.stripe.secretKey &&
-    config.stripe.webhookSecret &&
-    config.stripe.priceSingleReport &&
-    config.stripe.priceProMonthly
-  );
+  // Price IDs are validated where they are used — requiring the legacy price
+  // vars here would 503 every billing endpoint even with valid new-plan prices.
+  return Boolean(config.stripe.secretKey && config.stripe.webhookSecret);
 }

@@ -6,8 +6,6 @@ import type {
   StripeInvoice,
   StripeSubscription,
   StripeCharge,
-  BillingStatus,
-  SubscriptionStatus,
   Plan,
   PlanId,
   UserAccess,
@@ -198,6 +196,27 @@ export async function consumeTrialCredit(userId: string, reportId: string): Prom
   return data === true;
 }
 
+export type ConsumedCreditType = 'trial' | 'usage';
+
+export async function refundConsumedCredit(
+  userId: string,
+  reportId: string,
+  type: ConsumedCreditType
+): Promise<void> {
+  const rpcName = type === 'trial' ? 'refund_trial_credit' : 'refund_usage';
+  const { error } = await supabase.rpc(rpcName, {
+    p_user_id: userId,
+    p_report_id: reportId,
+  });
+
+  if (error) {
+    logger.error('Failed to refund consumed credit', error, { userId, reportId, type });
+    return;
+  }
+
+  logger.info('Consumed credit refunded after processing failure', { userId, reportId, type });
+}
+
 export async function initializeUserTrial(userId: string): Promise<void> {
   const { error } = await supabase.rpc('initialize_user_trial', { p_user_id: userId });
 
@@ -295,47 +314,6 @@ export async function getOrCreateStripeCustomer(userId: string, email: string): 
   await supabase.from('customers').upsert({ id: userId, stripe_customer_id: stripeCustomer.id });
 
   return stripeCustomer.id;
-}
-
-export async function getBillingStatus(userId: string): Promise<BillingStatus> {
-  const [subscriptionResult, creditsResult] = await Promise.all([
-    supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-      .in('status', ['active', 'trialing', 'past_due'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single(),
-    supabase.from('credits').select('*').eq('user_id', userId).single(),
-  ]);
-
-  const subscription = subscriptionResult.data;
-  const credits = creditsResult.data;
-  const hasActiveSubscription = Boolean(subscription && ['active', 'trialing'].includes(subscription.status));
-  const canProcessReport = hasActiveSubscription && (credits?.credits_remaining ?? 0) > 0;
-
-  return {
-    subscription: subscription
-      ? {
-          id: subscription.id,
-          status: subscription.status as SubscriptionStatus,
-          currentPeriodStart: subscription.current_period_start,
-          currentPeriodEnd: subscription.current_period_end,
-          cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        }
-      : null,
-    credits: credits
-      ? {
-          remaining: credits.credits_remaining,
-          usedThisPeriod: credits.credits_used_this_period,
-          periodStart: credits.period_start,
-          periodEnd: credits.period_end,
-        }
-      : null,
-    hasActiveSubscription,
-    canProcessReport,
-  };
 }
 
 // ============================================================================
@@ -708,10 +686,18 @@ async function resetSubscriptionCredits(userId: string, subscriptionId: string):
   const stripe = getStripeClient();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
 
+  const { data: credits } = await supabase
+    .from('credits')
+    .select('is_unlimited')
+    .eq('user_id', userId)
+    .maybeSingle();
+
   await supabase
     .from('credits')
     .update({
-      credits_remaining: MONTHLY_CREDITS,
+      // Unlimited (paid-plan) rows keep -1; resetting them to a finite number
+      // would silently downgrade the plan on renewal.
+      credits_remaining: credits?.is_unlimited ? -1 : MONTHLY_CREDITS,
       credits_used_this_period: 0,
       period_start: toISOString(subscription.current_period_start),
       period_end: toISOString(subscription.current_period_end),
@@ -719,44 +705,15 @@ async function resetSubscriptionCredits(userId: string, subscriptionId: string):
     })
     .eq('user_id', userId);
 
-  logger.info('Credits reset', { userId, credits: MONTHLY_CREDITS });
+  logger.info('Credits reset', { userId, credits: credits?.is_unlimited ? 'unlimited' : MONTHLY_CREDITS });
 }
 
-export async function consumeCredit(userId: string, reportId: string): Promise<boolean> {
-  const { data: credits } = await supabase
-    .from('credits')
-    .select('credits_remaining, credits_used_this_period')
-    .eq('user_id', userId)
-    .single();
-
-  if (!credits || credits.credits_remaining <= 0) return false;
-
-  const { error } = await supabase
-    .from('credits')
-    .update({
-      credits_remaining: credits.credits_remaining - 1,
-      credits_used_this_period: (credits.credits_used_this_period ?? 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('user_id', userId)
-    .gt('credits_remaining', 0);
-
-  if (error) {
-    logger.error('Failed to consume credit', error, { userId, reportId });
-    return false;
-  }
-
-  await supabase.from('reports').update({ payment_status: 'paid' }).eq('id', reportId);
-
-  logger.info('Credit consumed', { userId, reportId, remaining: credits.credits_remaining - 1 });
-  return true;
-}
-
-export async function checkReportPaymentStatus(reportId: string): Promise<boolean> {
+export async function checkReportPaymentStatus(reportId: string, userId: string): Promise<boolean> {
   const { data: report } = await supabase
     .from('reports')
     .select('payment_status')
     .eq('id', reportId)
+    .eq('user_id', userId)
     .single();
 
   return report?.payment_status === 'paid';

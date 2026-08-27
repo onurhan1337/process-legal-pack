@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ProcessingJob, JobStatus } from '../types/job';
 import { ReportAnalysis, Document } from '../types/report';
 import { downloadPdf, getReport, callWebhook, updateReportAnalysis, getUserProfile } from '../services/supabase';
+import { refundConsumedCredit } from '../services/billing';
 import { extractMultipleDocuments } from '../services/pdf-extractor';
 import { generateStructuredAnalysis, generateKeyFindingsForDocuments } from '../services/openai';
 import { scrapeUrl } from '../services/firecrawl';
@@ -28,7 +29,8 @@ function pruneFinishedJobs(): void {
 export function createJob(
   reportId: string,
   userId: string,
-  url?: string
+  url?: string,
+  consumedCredit?: 'trial' | 'usage'
 ): ProcessingJob {
   const jobId = uuidv4();
   const job: ProcessingJob = {
@@ -39,6 +41,7 @@ export function createJob(
     status: 'pending',
     createdAt: new Date(),
     updatedAt: new Date(),
+    consumedCredit,
   };
   
   jobs.set(jobId, job);
@@ -90,9 +93,19 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
+let activeJobCount = 0;
+
+export async function waitForActiveJobs(timeoutMs: number = 25000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (activeJobCount > 0 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+}
+
 export async function processJob(job: ProcessingJob): Promise<void> {
   const { jobId, reportId, userId, url } = job;
-  
+
+  activeJobCount++;
   try {
     updateJobStatus(jobId, 'processing');
     logger.info('Starting job processing', { jobId, reportId });
@@ -201,9 +214,13 @@ export async function processJob(job: ProcessingJob): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('Job processing failed', error, { jobId, reportId });
-    
+
     updateJobStatus(jobId, 'failed', errorMessage);
-    
+
+    if (job.consumedCredit) {
+      await refundConsumedCredit(userId, reportId, job.consumedCredit);
+    }
+
     try {
       await Promise.all([
         callWebhook(reportId, {} as ReportAnalysis, 'failed', errorMessage),
@@ -212,25 +229,17 @@ export async function processJob(job: ProcessingJob): Promise<void> {
     } catch (updateError) {
       logger.error('Failed to update report with error status', updateError, { jobId });
     }
-    
+
     throw error;
+  } finally {
+    activeJobCount--;
   }
 }
 
+// Jobs are processed inline by the /process route the moment they are
+// created; this interval only prunes finished jobs from the in-memory map.
+// Note the queue is in-memory only — jobs do not survive a restart.
 export function startJobProcessor(): void {
-  setInterval(() => {
-    pruneFinishedJobs();
-
-    const pendingJobs = Array.from(jobs.values()).filter(
-      job => job.status === 'pending'
-    );
-    
-    pendingJobs.forEach(job => {
-      processJob(job).catch(error => {
-        logger.error('Background job processing error', error, { jobId: job.jobId });
-      });
-    });
-  }, 5000);
-  
-  logger.info('Job processor started');
+  setInterval(pruneFinishedJobs, 60_000);
+  logger.info('Job processor started (in-memory, prune-only)');
 }

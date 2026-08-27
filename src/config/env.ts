@@ -28,7 +28,6 @@ export const config = {
   supabase: {
     url: getEnvVar('SUPABASE_URL'),
     serviceRoleKey: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
-    jwtSecret: getEnvVar('SUPABASE_JWT_SECRET'),
     webhookUrl: process.env.SUPABASE_WEBHOOK_URL || '',
   },
   

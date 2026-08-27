@@ -3,7 +3,7 @@ import { ProcessRequest, ProcessResponse } from '../types/job';
 import { createJob, processJob } from '../workers/job-processor';
 import { logger } from '../utils/logger';
 import { BillingRequest } from '../middleware/billing';
-import { consumeCredit, consumeTrialCredit, consumeUsage } from '../services/billing';
+import { consumeTrialCredit, consumeUsage, ConsumedCreditType } from '../services/billing';
 
 export async function processRoute(
   req: BillingRequest,
@@ -21,6 +21,7 @@ export async function processRoute(
     }
 
     const userAccess = req.userAccess;
+    let consumedCredit: ConsumedCreditType | undefined;
 
     if (userAccess?.isTrial && !userAccess?.isUnlimited) {
       const creditConsumed = await consumeTrialCredit(userId, reportId);
@@ -31,6 +32,7 @@ export async function processRoute(
         });
         return;
       }
+      consumedCredit = 'trial';
       logger.info('Trial credit consumed for report processing', {
         userId,
         reportId,
@@ -51,6 +53,7 @@ export async function processRoute(
         });
         return;
       }
+      consumedCredit = 'usage';
       logger.info('Usage consumed for report processing', {
         userId,
         reportId,
@@ -59,23 +62,9 @@ export async function processRoute(
         usageLimit: userAccess.usageLimit,
         usageRemaining: userAccess.usageLimit - userAccess.usageCount - 1,
       });
-    } else if (req.hasSubscription && req.creditsRemaining && req.creditsRemaining > 0) {
-      const creditConsumed = await consumeCredit(userId, reportId);
-      if (!creditConsumed) {
-        res.status(402).json({
-          error: 'Failed to consume credit',
-          code: 'CREDIT_CONSUMPTION_FAILED',
-        });
-        return;
-      }
-      logger.info('Credit consumed for report processing', {
-        userId,
-        reportId,
-        creditsRemaining: req.creditsRemaining - 1,
-      });
     }
-    
-    const job = createJob(reportId, userId, url);
+
+    const job = createJob(reportId, userId, url, consumedCredit);
     
     processJob(job).catch(error => {
       logger.error('Background job processing failed', error, {

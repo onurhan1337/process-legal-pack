@@ -9,6 +9,7 @@ export interface ProcessingJob {
   createdAt: Date;
   updatedAt: Date;
   error?: string;
+  consumedCredit?: 'trial' | 'usage';
 }
 
 export interface ProcessRequest {
