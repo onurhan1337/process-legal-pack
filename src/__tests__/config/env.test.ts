@@ -30,13 +30,28 @@ test('config should have required structure', () => {
 test('config should throw on missing required env var', () => {
   const originalEnv = { ...process.env };
   const originalSupabaseUrl = process.env.SUPABASE_URL;
-  
+
+  // A local .env file would put the variable straight back when the config
+  // module re-runs dotenv.config(), so stub dotenv out for this test.
+  const dotenvPath = require.resolve('dotenv');
+  const originalDotenv = require.cache[dotenvPath];
+  require.cache[dotenvPath] = {
+    ...(originalDotenv as NodeModule),
+    exports: { config: () => ({ parsed: {} }) },
+  } as NodeModule;
+
   delete process.env.SUPABASE_URL;
   delete require.cache[envPath];
-  
+
   assert.throws(() => {
     require('../../config/env');
   }, /Missing required environment variable: SUPABASE_URL/);
+
+  if (originalDotenv) {
+    require.cache[dotenvPath] = originalDotenv;
+  } else {
+    delete require.cache[dotenvPath];
+  }
 
   Object.assign(process.env, originalEnv);
   if (originalSupabaseUrl) {
