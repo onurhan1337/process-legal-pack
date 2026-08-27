@@ -1,287 +1,159 @@
 # Legal Pack Processor
 
-Backend service for processing legal pack PDFs with OpenAI analysis and Firecrawl URL extraction.
+Backend service that analyzes property auction legal packs. It extracts text from PDF/DOCX documents, optionally scrapes the property listing URL, runs LLM analysis (Moonshot Kimi or OpenAI), and writes a structured risk report back to Supabase. Includes Stripe billing with trials, subscriptions, and usage limits.
 
-## Features
+## Architecture
 
-- PDF text extraction from legal pack documents
-- Structured analysis using OpenAI GPT-4o-mini
-- Property details extraction from URLs using Firecrawl
-- Key findings generation per document
-- Async job processing with status tracking
-- Webhook callbacks to Supabase
+```mermaid
+flowchart TB
+    Client[Frontend / API client]
+
+    subgraph API["Express API"]
+        Auth[Auth middleware<br/>Supabase JWT]
+        Billing[Billing middleware<br/>trial / subscription / usage]
+        Process["POST /process"]
+        Jobs["GET /jobs/:jobId"]
+        BillingRoutes["/billing/*"]
+        StripeRoutes["/stripe/checkout · /stripe/portal"]
+        Webhook["POST /stripe/webhook"]
+    end
+
+    subgraph Worker["Job Processor (in-memory queue)"]
+        Extract[PDF / DOCX text extraction<br/>pdf-parse · mammoth]
+        Scrape[URL scraping<br/>Firecrawl]
+        Findings[Key findings per document<br/>fast LLM, batched]
+        Analysis[Structured analysis<br/>LLM, JSON output]
+        Transform[Transform & merge<br/>property details]
+    end
+
+    subgraph External["External services"]
+        Supabase[(Supabase<br/>Postgres + Storage + Auth)]
+        LLM[LLM provider<br/>Moonshot Kimi / OpenAI]
+        Firecrawl[Firecrawl API]
+        Stripe[Stripe]
+    end
+
+    Client -->|JWT| Auth --> Billing --> Process
+    Client --> Jobs
+    Client --> BillingRoutes
+    Client --> StripeRoutes
+    Stripe -->|signed events| Webhook
+
+    Process -->|creates job| Worker
+    Extract --> Findings --> Analysis --> Transform
+    Scrape --> Analysis
+
+    Worker -->|download PDFs| Supabase
+    Worker -->|analysis_result + webhook| Supabase
+    Worker -->|completion email via Edge Function| Supabase
+    Findings & Analysis --> LLM
+    Scrape --> Firecrawl
+    StripeRoutes --> Stripe
+    Webhook -->|subscriptions · payments · credits| Supabase
+```
+
+### Processing flow
+
+1. Client calls `POST /process` with a Supabase JWT. Auth middleware verifies the token; billing middleware checks trial credits, subscription usage, or per-report payment.
+2. A job is created in an in-memory queue and processed asynchronously (HTTP returns `202` immediately).
+3. The worker downloads the report's files from Supabase Storage, extracts text (`pdf-parse` for PDF, `mammoth` for DOCX), and optionally scrapes the listing URL with Firecrawl.
+4. Key findings are generated per document (batched, concurrent), then a single structured analysis pass produces the full JSON report.
+5. The result is written to the `reports` table, an optional webhook is called, and a completion email is sent via a Supabase Edge Function.
 
 ## Prerequisites
 
-- Node.js >= 20.0.0
-- Supabase project with storage bucket for PDFs
-- OpenAI API key
-- Firecrawl API key (optional)
+- Node.js >= 20
+- Supabase project (Postgres, Auth, Storage bucket `legal-packs`)
+- Moonshot or OpenAI API key
+- Optional: Firecrawl API key, Stripe account
 
 ## Setup
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+```bash
+npm install
+cp .env.example .env   # fill in your values
+npm run dev            # development
+# or
+npm run build && npm start
+```
 
-3. Copy `.env.example` to `.env` and fill in your values:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. Build the project:
-   ```bash
-   npm run build
-   ```
-
-5. Start the server:
-   ```bash
-   npm start
-   ```
-
-   Or for development:
-   ```bash
-   npm run dev
-   ```
+Apply the SQL migrations in `supabase/migrations/` to your Supabase project (billing tables, RPC functions, RLS policies).
 
 ## Environment Variables
 
-### Required Variables
-- `SUPABASE_URL` - Your Supabase project URL
-- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (server-side only)
-- `SUPABASE_JWT_SECRET` - JWT secret for token verification
-- `OPENAI_API_KEY` - OpenAI API key for analysis
+### Required
 
-### Optional Variables
-- `CORS_ORIGIN` - Allowed CORS origins (comma-separated). Defaults to `*` (all origins). For production, set to your frontend URL(s), e.g., `https://app.useasta.com`
-- `PORT` - Server port (default: 3000)
-- `NODE_ENV` - Environment (default: development)
-- `FIRECRAWL_API_KEY` - Firecrawl API key for URL scraping (optional)
-- `SUPABASE_WEBHOOK_URL` - Webhook URL for callbacks (optional)
-- `WEBHOOK_SECRET` - Secret for webhook authentication (optional)
+| Variable | Description |
+|---|---|
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (server-side only) |
+| `SUPABASE_JWT_SECRET` | JWT secret for token verification |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `MOONSHOT_API_KEY` | Required when `LLM_PROVIDER=kimi` (default) |
 
-## API Endpoints
+### Optional
 
-### Health Check
-```
-GET /health
-```
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Server port |
+| `NODE_ENV` | `development` | Environment |
+| `CORS_ORIGIN` | `*` | Allowed origins, comma-separated |
+| `LLM_PROVIDER` | `kimi` | `kimi` or `openai` |
+| `LLM_BATCH_SIZE` | `5` | Documents per key-findings batch |
+| `LLM_CONCURRENCY` | `2` | Concurrent LLM batch requests |
+| `LLM_USE_FAST_MODEL` | `true` | Use fast model for key findings |
+| `FIRECRAWL_API_KEY` | — | Enables listing URL scraping |
+| `SUPABASE_WEBHOOK_URL` | — | Completion webhook target |
+| `WEBHOOK_SECRET` | — | Included in webhook payloads |
+| `REPORT_BASE_URL` | — | Base URL used in report links / emails |
+| `FRONTEND_URL` | — | Redirect target for Stripe checkout/portal |
+| `STRIPE_SECRET_KEY` | — | Stripe secret key (billing disabled if unset) |
+| `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook signing secret |
+| `STRIPE_PRICE_SINGLE_REPORT` | — | Price ID for one-off report payment |
+| `STRIPE_PRICE_PRO_MONTHLY` | — | Price ID for legacy pro subscription |
+| `STRIPE_PRICE_STARTER_MONTHLY` | — | Price ID for starter plan |
+| `STRIPE_PRICE_PROFESSIONAL_MONTHLY` | — | Price ID for professional plan |
 
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-01T00:00:00.000Z",
-  "service": "legal-pack-processor"
-}
-```
+## API
 
-### Process Legal Pack
-```
-POST /process
-Authorization: Bearer <supabase-jwt-token>
-Content-Type: application/json
-```
+All authenticated endpoints expect `Authorization: Bearer <supabase-jwt>`.
 
-**Request Body:**
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | — | Health check |
+| `POST` | `/process` | JWT + billing | Queue a legal pack analysis job |
+| `GET` | `/jobs/:jobId` | JWT | Job status (owner only) |
+| `GET` | `/billing/status` | JWT | Access, trial, subscription, and usage info |
+| `GET` | `/billing/plans` | — | Active plans |
+| `POST` | `/billing/initialize-trial` | JWT | Start the free trial |
+| `POST` | `/stripe/checkout` | JWT | Create a Stripe Checkout session (rate limited) |
+| `POST` | `/stripe/portal` | JWT | Create a Stripe billing portal session (rate limited) |
+| `POST` | `/stripe/webhook` | Stripe signature | Stripe event handler (idempotent) |
+
+### POST /process
+
 ```json
 {
   "reportId": "123e4567-e89b-12d3-a456-426614174000",
-  "userId": "user-uuid",
   "url": "https://example.com/property-listing"
 }
 ```
 
-**Note:** `userId` is optional - if not provided, it will be extracted from the JWT token. `url` is also optional.
+`userId` is taken from the JWT (if sent in the body, it must match). `url` is optional. Responds `202` with `{ "jobId", "status", "message" }`; poll `GET /jobs/:jobId` for progress. On completion the `reports` row is updated with `analysis_result` (title, ownership, charges, covenants, tenure, planning, risks, per-document key findings, and merged property details).
 
-**Response (202 Accepted):**
-```json
-{
-  "jobId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "pending",
-  "message": "Job queued for processing"
-}
-```
-
-## Frontend Integration (React)
-
-### Example: Calling the API from React
-
-```typescript
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-async function processLegalPack(reportId: string, url?: string) {
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session) {
-    throw new Error('Not authenticated');
-  }
-
-  const response = await fetch('https://your-backend-url.com/process', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({
-      reportId,
-      userId: session.user.id,
-      url,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to start processing');
-  }
-
-  const result = await response.json();
-  return result;
-}
-```
-
-### Important Security Notes
-
-- **Never expose `WEBHOOK_SECRET` to the frontend** - It's only used server-to-server (optional, only needed if webhooks are configured)
-- The frontend only needs:
-  - Supabase JWT token (from `session.access_token`)
-  - `reportId` (required)
-  - `userId` (optional, extracted from JWT if not provided)
-  - `url` (optional)
-- The backend automatically includes `webhookSecret` in webhook payloads if configured (webhooks are optional)
-
-### Get Job Status
-```
-GET /jobs/:jobId
-```
-
-**Response:**
-```json
-{
-  "jobId": "550e8400-e29b-41d4-a716-446655440000",
-  "reportId": "123e4567-e89b-12d3-a456-426614174000",
-  "userId": "user-uuid",
-  "url": "https://example.com/property-listing",
-  "status": "completed",
-  "createdAt": "2024-01-01T00:00:00.000Z",
-  "updatedAt": "2024-01-01T00:05:00.000Z"
-}
-```
-
-## Processing Flow
-
-1. Client sends POST request to `/process` with `reportId`, `userId`, and optional `url`
-2. Server validates JWT token and creates a background job
-3. Job processor:
-   - Downloads PDFs from Supabase Storage
-   - Extracts text from PDFs using pdfjs-dist
-   - Optionally scrapes URL using Firecrawl for property details
-   - Generates structured analysis using OpenAI
-   - Generates key findings for each document
-   - Updates Supabase via webhook with analysis results
-
-## Output Example
-
-The service updates the Supabase `reports` table with `analysis_result` JSONB containing:
-
-```json
-{
-  "title": {
-    "issues": [
-      {
-        "severity": "high",
-        "description": "Title defect identified",
-        "recommendation": "Obtain updated title documents"
-      }
-    ],
-    "description": "Property title analysis summary"
-  },
-  "ownership": {
-    "issues": []
-  },
-  "chargesAndMoney": {
-    "charges": [
-      {
-        "type": "Mortgage",
-        "amount": 150000,
-        "description": "Outstanding mortgage charge"
-      }
-    ],
-    "issues": []
-  },
-  "covenants": "Standard restrictive covenants apply",
-  "tenure": "Freehold",
-  "planningAndDevelopment": {
-    "issues": []
-  },
-  "completionAndPenaltyRisks": {
-    "issues": []
-  },
-  "physicalAndEnvironmentalRisks": {
-    "issues": []
-  },
-  "specialConditionsAndAmenities": {
-    "issues": []
-  },
-  "documents": [
-    {
-      "name": "title-deed.pdf",
-      "pages": 5,
-      "keyFindings": "Property is freehold with no restrictions"
-    }
-  ],
-  "propertyDetails": {
-    "propertyType": "House",
-    "bedrooms": 3,
-    "bathrooms": 2,
-    "size": "1200 sq ft",
-    "tenure": "Freehold",
-    "guidePrice": "£250,000",
-    "auctionDate": "2024-02-15",
-    "auctionDateNote": "Auction scheduled for February 15th"
-  }
-}
-```
+A Postman collection is included: `Legal Pack Processor.postman_collection.json`.
 
 ## Development
 
-Run type checking:
 ```bash
 npm run type-check
-```
-
-Run tests:
-```bash
 npm test
 ```
 
 ## Deployment
 
-The service is configured for deployment on Render. See `render.yaml` for configuration.
-
-### Render Deployment Setup
-
-1. **Using render.yaml (Recommended):**
-   - Connect your GitHub repository to Render
-   - Render will automatically detect and use `render.yaml`
-   - Ensure the build command is: `npm ci && npm run build`
-   - Ensure the start command is: `npm start`
-
-2. **Manual Configuration (if render.yaml isn't detected):**
-   - Go to your Render dashboard
-   - Navigate to your service settings
-   - Set the following:
-     - **Build Command:** `npm ci && npm run build`
-     - **Start Command:** `npm start`
-     - **Node Version:** 20.x or higher
-   - Make sure to set all required environment variables listed in `render.yaml`
-
-**Important:** The build command must include `npm run build` to compile TypeScript. If you see errors about missing `dist/index.js`, it means the build step didn't run.
+Configured for [Render](https://render.com) via `render.yaml` (build: `npm ci && npm run build`, start: `npm start`). Set the environment variables above in your Render dashboard. Point your Stripe webhook endpoint at `https://<your-service>/stripe/webhook`.
 
 ## License
 
-MIT
+[MIT](LICENSE)

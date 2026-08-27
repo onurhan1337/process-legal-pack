@@ -1,6 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { config } from '../config/env';
 import { logger } from '../utils/logger';
+import { supabase } from './supabase';
 import { getStripeClient } from './stripe';
 import type {
   StripeCheckoutSession,
@@ -15,8 +14,6 @@ import type {
   UsageInfo,
   ExistingSubscription,
 } from '../types/billing';
-
-const supabase = createClient(config.supabase.url, config.supabase.serviceRoleKey);
 
 const MONTHLY_CREDITS = 5;
 const PLAN_LIMITS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -183,7 +180,7 @@ export function calculateUsageInfo(access: UserAccess): UsageInfo | null {
     };
   }
 
-  return access.isUnlimited ? null : null;
+  return null;
 }
 
 export async function consumeTrialCredit(userId: string, reportId: string): Promise<boolean> {
@@ -728,7 +725,7 @@ async function resetSubscriptionCredits(userId: string, subscriptionId: string):
 export async function consumeCredit(userId: string, reportId: string): Promise<boolean> {
   const { data: credits } = await supabase
     .from('credits')
-    .select('credits_remaining')
+    .select('credits_remaining, credits_used_this_period')
     .eq('user_id', userId)
     .single();
 
@@ -738,7 +735,7 @@ export async function consumeCredit(userId: string, reportId: string): Promise<b
     .from('credits')
     .update({
       credits_remaining: credits.credits_remaining - 1,
-      credits_used_this_period: supabase.rpc('increment_credits_used', { user_id_param: userId }),
+      credits_used_this_period: (credits.credits_used_this_period ?? 0) + 1,
       updated_at: new Date().toISOString(),
     })
     .eq('user_id', userId)

@@ -104,7 +104,14 @@ function createLLMConfig(): LLMConfig {
   };
 }
 
-const llmConfig = createLLMConfig();
+let cachedLLMConfig: LLMConfig | null = null;
+
+function getLLMConfig(): LLMConfig {
+  if (!cachedLLMConfig) {
+    cachedLLMConfig = createLLMConfig();
+  }
+  return cachedLLMConfig;
+}
 
 function extractContent(message: OpenAI.Chat.Completions.ChatCompletionMessage): string | null {
   const content = message.content;
@@ -140,9 +147,10 @@ async function generateKeyFindingsSingle(
     return `Unable to extract text from ${fileName}. ${extractedText}`;
   }
 
+  const llmConfig = getLLMConfig();
   const userPrompt = KEY_FINDINGS_USER_PROMPT_TEMPLATE
-    .replace('{fileName}', fileName)
-    .replace('{content}', extractedText);
+    .replace('{fileName}', () => fileName)
+    .replace('{content}', () => extractedText);
 
   try {
     const completion = await llmConfig.client.chat.completions.create({
@@ -189,6 +197,7 @@ async function generateKeyFindingsSingle(
 async function generateKeyFindingsBatch(
   documents: Array<{ fileName: string; text: string }>
 ): Promise<{ findings: string[]; failed: string[] }> {
+  const llmConfig = getLLMConfig();
   const failed: string[] = [];
 
   const batchPrompt = documents
@@ -273,6 +282,7 @@ Ensure you provide findings for ALL documents in the batch. If a document has no
 export async function generateKeyFindingsForDocuments(
   documents: Array<{ fileName: string; text: string }>
 ): Promise<KeyFindingsResult> {
+  const llmConfig = getLLMConfig();
   const startTime = Date.now();
   const batchSize = config.llm.batchSize;
   const concurrency = config.llm.concurrency;
@@ -368,6 +378,7 @@ export async function generateStructuredAnalysis(
   urlContent?: string,
   keyFindings?: Array<{ fileName: string; findings: string }>
 ): Promise<StructuredAnalysisResponse> {
+  const llmConfig = getLLMConfig();
   const startTime = Date.now();
 
   logger.info('Starting structured analysis', {
@@ -403,8 +414,8 @@ Remember: Extract comprehensively. Each distinct risk, obligation, charge, or co
   }
 
   const userPrompt = STRUCTURED_ANALYSIS_USER_PROMPT_TEMPLATE
-    .replace('{content}', fullText)
-    .replace('{keyFindingsSection}', keyFindingsSection);
+    .replace('{content}', () => fullText)
+    .replace('{keyFindingsSection}', () => keyFindingsSection);
 
   try {
     const completion = await llmConfig.client.chat.completions.create({
@@ -446,11 +457,4 @@ Remember: Extract comprehensively. Each distinct risk, obligation, charge, or co
       `Failed to generate structured analysis: ${error instanceof Error ? error.message : String(error)}`
     );
   }
-}
-
-export async function generateKeyFindings(
-  fileName: string,
-  extractedText: string
-): Promise<string> {
-  return generateKeyFindingsSingle(fileName, extractedText);
 }

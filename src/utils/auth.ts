@@ -1,11 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { config } from '../config/env';
+import { supabase } from '../services/supabase';
 import { logger } from './logger';
-
-const supabaseAdmin = createClient(
-  config.supabase.url,
-  config.supabase.serviceRoleKey
-);
 
 export async function verifySupabaseJWT(token: string): Promise<{
   userId: string;
@@ -13,7 +7,7 @@ export async function verifySupabaseJWT(token: string): Promise<{
 }> {
   try {
     const cleanToken = token.replace(/^Bearer\s+/i, '');
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(cleanToken);
+    const { data: { user }, error } = await supabase.auth.getUser(cleanToken);
     
     if (error || !user) {
       throw new Error(`Invalid or expired token: ${error?.message || 'User not found'}`);

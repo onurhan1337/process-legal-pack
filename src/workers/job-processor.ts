@@ -11,6 +11,20 @@ import { logger } from '../utils/logger';
 
 const jobs = new Map<string, ProcessingJob>();
 
+const FINISHED_JOB_RETENTION_MS = 60 * 60 * 1000;
+
+function pruneFinishedJobs(): void {
+  const cutoff = Date.now() - FINISHED_JOB_RETENTION_MS;
+  for (const [jobId, job] of jobs) {
+    if (
+      (job.status === 'completed' || job.status === 'failed') &&
+      job.updatedAt.getTime() < cutoff
+    ) {
+      jobs.delete(jobId);
+    }
+  }
+}
+
 export function createJob(
   reportId: string,
   userId: string,
@@ -205,6 +219,8 @@ export async function processJob(job: ProcessingJob): Promise<void> {
 
 export function startJobProcessor(): void {
   setInterval(() => {
+    pruneFinishedJobs();
+
     const pendingJobs = Array.from(jobs.values()).filter(
       job => job.status === 'pending'
     );
