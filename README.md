@@ -77,7 +77,7 @@ npm run dev            # development
 npm run build && npm start
 ```
 
-> **Migrations:** the canonical, complete migration set (billing tables, RPC functions, RLS policies) lives in the [asta-legal-insight](https://github.com/astahq/asta-legal-insight) repo under `supabase/migrations/`. The copies in this repo's `supabase/migrations/` are a stale subset kept for reference — apply the dashboard repo's migrations to your Supabase project.
+> **Migrations:** this service owns no schema of its own. The migration set (billing tables, RPC functions, RLS policies) lives in the [asta-legal-insight](https://github.com/astahq/asta-legal-insight) repo under `supabase/migrations/`; apply those to your Supabase project before running this service.
 
 ## Environment Variables
 

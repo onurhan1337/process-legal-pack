@@ -1,7 +1,10 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
 *.log
+supabase/.temp/
 .DS_Store
 *.tsbuildinfo
 .cursor
